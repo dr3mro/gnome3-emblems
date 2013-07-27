@@ -1,74 +1,190 @@
-import os
-
+import subprocess
+import urllib
+import thread
+from time import sleep
 from gi.repository import Gtk, GdkPixbuf, Nautilus, GObject
+
 try:
     from gi._glib import GError
 except ImportError:
     from gi.repository.GLib import GError  # flake8: noqa
-
-__version__ = 0.3
+emblems = []
+debug = 1
+__version__ = 0.6
 
 
 class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
     def __init__(self):
+        self.icons_has_been_loaded = False
+        self.icons_file_path = '/usr/share/gnome3-emblems/icons_whitelist.conf'
+        self.icons_whitelist = self.get_icons_list_from_file()
         pass
 
     def get_property_pages(self, files):
-        self.files = files
-        actual_emblems = self.get_actual_emblems(files)
+        if len(files) > 1:
+            return
+        self.file = files
+        self.path = urllib.unquote(self.file[0].get_uri()[7:])
+#      self.actual_emblems = self.get_actual_emblems()
         property_page = self.create_property_page()
-        self.fill_emblems(actual_emblems)
         self.connect_signals()
         return property_page
 
     def create_property_page(self):
         property_label = Gtk.Label('Emblems')
         property_label.show()
-
-        # Save the icon, name & full-name
         self.list_store = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str)
-
         self.icon_view = Gtk.IconView()
+        thread.start_new_thread(self.fill_emblems, ())
+        self.job_id = GObject.timeout_add(250, self.icon_view_refresh())
         self.icon_view.set_model(self.list_store)
         self.icon_view.set_pixbuf_column(0)
-        self.icon_view.set_text_column(1)
-        #self.icon_view.set_selection_mode(Gtk.SelectionMode.MULTIPLE)
-        self.icon_view.show()
-
-        scroll = Gtk.ScrolledWindow()
+#      self.icon_view.set_text_column(1)
+        self.setEmblemButton = Gtk.Button('Set Emblem')
+        self.setEmblemButton.set_sensitive(False)
+        self.clearEmblemButton = Gtk.Button('Clear Emblem')
+        self.setIconButton = Gtk.Button('Set Icon')
+        self.setIconButton.set_sensitive(False)
+        self.clearIconButton = Gtk.Button('Clear Icon')
+        self.refreshButton = Gtk.Button(
+            None,
+            image=Gtk.Image(
+                stock=Gtk.STOCK_REFRESH))
+        scroll = Gtk.ScrolledWindow(vexpand=True, hexpand=True)
         scroll.add(self.icon_view)
-        scroll.show()
-
+        self.vbox = Gtk.VBox(False,  0)
+        buttonbox = Gtk.ButtonBox()
+        buttonbox.set_layout(Gtk.ButtonBoxStyle.CENTER)
+        for button in (
+            self.refreshButton,
+            self.clearEmblemButton,
+            self.setEmblemButton,
+            self.clearIconButton,
+            self.setIconButton
+        ):
+            buttonbox.pack_start(button, False, False, 0)
+        self.vbox.pack_start(scroll, True, True, 0)
+        self.vbox.pack_start(buttonbox, False, True, 0)
+        self.vbox.show_all()
         return Nautilus.PropertyPage(name="NautilusPython::emblems",
                                      label=property_label,
-                                     page=scroll),
+                                     page=self.vbox),
+
+    def get_icons_list_from_file(self):
+        try:
+            icons = [line.strip() for line in open(self.icons_file_path)]
+        except:
+            icons = []
+        return icons
+
+    def icon_view_refresh(self):
+        self.icon_view.set_model(None)
+        self.icon_view.set_model(self.list_store)
+        if self.icons_has_been_loaded:
+            GObject.source_remove(self.job_id)
+        return
 
     def connect_signals(self):
         self.icon_view.connect('selection-changed', self.on_selection_changed)
+        self.icon_view.connect('destroy', self.on_propertywindows_quit)
+        self.refreshButton.connect('clicked', self.on_refresh_button_clicked)
+        self.setEmblemButton.connect('clicked', self.on_set_emblem_clicked)
+        self.clearEmblemButton.connect('clicked', self.on_clear_emblem_clicked)
+        self.setIconButton.connect('clicked', self.on_set_icon_clicked)
+        self.clearIconButton.connect('clicked', self.on_clear_icon_clicked)
+
+    def on_refresh_button_clicked(self, widget):
+        self.list_store.clear()
+        self.icons_has_been_loaded = False
+        self.job_id = GObject.timeout_add(250, self.icon_view_refresh())
+        thread.start_new_thread(self.fill_emblems, ())
+        self.icon_view_refresh()
+
+    def on_set_emblem_clicked(self, widget):
+            self.emblem = ''.join(
+                [self.icon_view.get_model()[item][2]
+                 for item in self.icon_view.get_selected_items()])
+            if self.emblem != '':
+                self.clearEmblem()
+                self.execute(
+                    ["gvfs-set-attribute",
+                     "-t",
+                     "stringv",
+                     self.path,
+                     "metadata::emblems",
+                     self.emblem])
+            else:
+                return
+
+    def on_set_icon_clicked(self, widget):
+            self.icon = ''.join(
+                [self.icon_view.get_model()[item][2]
+                    for item in self.icon_view.get_selected_items()])
+            if self.icon != '':
+                icon_theme = Gtk.IconTheme.get_default()
+                icon_path = icon_theme.lookup_icon(self.icon, 48, 0)
+                print "icon path: %s" % icon_path.get_filename()
+                self.clearIcon()
+                self.icon_path_comp = "file://" + icon_path.get_filename()
+                self.execute(
+                    ["gvfs-set-attribute", "-t", "string",
+                     self.path, "metadata::custom-icon",
+                     self.icon_path_comp])
+            else:
+                return
+
+    def on_clear_icon_clicked(self, widget):
+        self.clearIcon()
+
+    def clearIcon(self):
+        self.execute(
+            ["gvfs-set-attribute",
+             "-t", "unset",
+             self.path,
+             "metadata::custom-icon-name"])
+        self.execute(
+            ["gvfs-set-attribute",
+             "-t", "unset",
+             self.path,
+             "metadata::custom-icon"])
+
+    def on_clear_emblem_clicked(self, widget):
+        self.clearEmblem()
+
+    def clearEmblem(self):
+        self.execute(
+            ["gvfs-set-attribute", "-t", "unset",
+             self.path, "metadata::emblems"])
+
+    def execute(self, job):
+        p = subprocess.Popen(job, stdout=subprocess.PIPE)
+        (out, err) = p.communicate()
+        return out
+
+    def refresh(self):
+        self.execute(
+            ["xte", "keydown Control_L",
+             "key R", "keyup Control_L"])
 
     def on_selection_changed(self, widget):
-        for file in self.files:
-            partial_cmd = 'gvfs-set-attribute "%s" -t' % file.get_uri()
+        if debug:
+            item = self.icon_view.get_selected_items()[0]
+            with open("/tmp/gnome3-emblems.log", 'a') as icon_file:
+                icon_file.write('%s\n' % self.list_store[item][1])
+                icon_file.close()
+        self.setEmblemButton.set_sensitive(True)
+        self.setIconButton.set_sensitive(True)
 
-            emblem = ''.join([widget.get_model()[item][2]
-                              for item in widget.get_selected_items()])
-            if emblem == '':
-                file.add_emblem(emblem)
-            else:
-                # Clear previous emblems
-                os.system('%s unset metadata::emblems' % partial_cmd)
-                # Add new emblems
-                os.system(
-                    '%s stringv metadata::emblems %s' % (partial_cmd, emblem)
-                )
-                # The add_emblem is called too to see the emblem just in the
-                # moment, if not, a nautilus refresh will be needed
-                # file.add_emblem(emblem)
+    def on_propertywindows_quit(self, widget):
+        self.refresh()
+        GObject.source_remove(self.job_id)
 
-    def get_actual_emblems(self, files):
+    def get_actual_emblems(self):
+#        info = ["gvfs-info", self.path, "-a", "metadata::emblems"]
+#        emblem = self.execute(info)
         return []
 
-    @staticmethod
+#    @staticmethod
     def get_icon_name(name):
         """Returns the name human readable.
 
@@ -78,21 +194,25 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
         name = name.replace('-emblem', '')
         name = name.replace('emblem-', '')
         name = name.replace('-', ' ')
+        name = name.replace('_', ' ')
         return name[0].upper() + name[1:]
 
-    def fill_emblems(self, actual_emblems):
+    def decompose_icon_name(self, name):
+        name = name.replace('-', ' ')
+        name = name.replace('_', ' ')
+        name = name.split()
+        return name
+
+    def fill_emblems(self):
         """Fill the listore with the proper icons."""
         theme = Gtk.IconTheme.get_default()
         icons = theme.list_icons(None)
+        icons.sort()
         for icon in icons:
-            if 'emblem' in icon:
+            if  icon in self.icons_whitelist:
                 try:
                     pixbuf = theme.load_icon(icon, 48, 0)
+                    self.list_store.append([pixbuf, icon, icon])
                 except GError:
-                    # This exception is to avoid bug #4 at github:
-                    # https://github.com/agonzalezro/gnome3-emblems/issues/4
                     pass
-                else:
-                    self.list_store.append(
-                        [pixbuf, self.get_icon_name(icon), icon]
-                    )
+        self.icons_has_been_loaded = True
