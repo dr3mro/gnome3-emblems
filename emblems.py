@@ -1,8 +1,9 @@
 import subprocess
 import urllib
-import thread
+#import thread
 from time import sleep
-from gi.repository import Gtk, GdkPixbuf, Nautilus, GObject
+from gi.repository import Gtk, GdkPixbuf, Nautilus, GObject, GLib
+from threading import Thread
 
 try:
     from gi._glib import GError
@@ -35,11 +36,9 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
         property_label.show()
         self.list_store = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str)
         self.icon_view = Gtk.IconView()
-        thread.start_new_thread(self.fill_emblems, ())
-        self.job_id = GObject.timeout_add(250, self.icon_view_refresh())
         self.icon_view.set_model(self.list_store)
         self.icon_view.set_pixbuf_column(0)
-#      self.icon_view.set_text_column(1)
+        #self.icon_view.set_text_column(1)
         self.setEmblemButton = Gtk.Button('Set Emblem')
         self.setEmblemButton.set_sensitive(False)
         self.clearEmblemButton = Gtk.Button('Clear Emblem')
@@ -66,6 +65,8 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
         self.vbox.pack_start(scroll, True, True, 0)
         self.vbox.pack_start(buttonbox, False, True, 0)
         self.vbox.show_all()
+        GLib.timeout_add(500, self.fill_emblems)
+        self.job_id = GLib.timeout_add(100, self.icon_view_refresh())
         return Nautilus.PropertyPage(name="NautilusPython::emblems",
                                      label=property_label,
                                      page=self.vbox),
@@ -81,8 +82,10 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
         self.icon_view.set_model(None)
         self.icon_view.set_model(self.list_store)
         if self.icons_has_been_loaded:
-            GObject.source_remove(self.job_id)
-        return
+            GLib.source_remove(self.job_id)
+            return False
+        else:
+            return True
 
     def connect_signals(self):
         self.icon_view.connect('selection-changed', self.on_selection_changed)
@@ -96,8 +99,8 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
     def on_refresh_button_clicked(self, widget):
         self.list_store.clear()
         self.icons_has_been_loaded = False
-        self.job_id = GObject.timeout_add(250, self.icon_view_refresh())
-        thread.start_new_thread(self.fill_emblems, ())
+        self.job_id = GLib.timeout_add(100, self.icon_view_refresh())
+        GLib.timeout_add(500,self.fill_emblems)
         self.icon_view_refresh()
 
     def on_set_emblem_clicked(self, widget):
@@ -172,12 +175,13 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
             with open("/tmp/gnome3-emblems.log", 'a') as icon_file:
                 icon_file.write('%s\n' % self.list_store[item][1])
                 icon_file.close()
+        print item
         self.setEmblemButton.set_sensitive(True)
         self.setIconButton.set_sensitive(True)
 
     def on_propertywindows_quit(self, widget):
         self.refresh()
-        GObject.source_remove(self.job_id)
+        GLib.source_remove(self.job_id)
 
     def get_actual_emblems(self):
 #        info = ["gvfs-info", self.path, "-a", "metadata::emblems"]
@@ -206,13 +210,17 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
     def fill_emblems(self):
         """Fill the listore with the proper icons."""
         theme = Gtk.IconTheme.get_default()
-        icons = theme.list_icons(None)
-        icons.sort()
-        for icon in icons:
-            if  icon in self.icons_whitelist:
+        #theme.set_custom_theme("Humanity")
+        icons=theme.list_icons(None)
+        self.icons_whitelist.sort()
+        for icon in self.icons_whitelist:
                 try:
                     pixbuf = theme.load_icon(icon, 48, 0)
                     self.list_store.append([pixbuf, icon, icon])
+                    with open("/tmp/valid_icons", 'a') as valid_icons:
+                        valid_icons.write('%s\n' % icon)
+                        valid_icons.close()
                 except GError:
                     pass
         self.icons_has_been_loaded = True
+        return False
