@@ -65,8 +65,10 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
         self.vbox.pack_start(scroll, True, True, 0)
         self.vbox.pack_start(buttonbox, False, True, 0)
         self.vbox.show_all()
-        GLib.timeout_add(500, self.fill_emblems)
-        self.job_id = GLib.timeout_add(100, self.icon_view_refresh())
+        #GLib.timeout_add(500, self.fill_emblems)
+        #self.job_id = GLib.timeout_add(100, self.icon_view_refresh())
+        self.icon_view_refresh()
+        self.fill_emblems()
         return Nautilus.PropertyPage(name="NautilusPython::emblems",
                                      label=property_label,
                                      page=self.vbox),
@@ -82,7 +84,7 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
         self.icon_view.set_model(None)
         self.icon_view.set_model(self.list_store)
         if self.icons_has_been_loaded:
-            GLib.source_remove(self.job_id)
+            #GLib.source_remove(self.job_id)
             return False
         else:
             return True
@@ -99,8 +101,10 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
     def on_refresh_button_clicked(self, widget):
         self.list_store.clear()
         self.icons_has_been_loaded = False
-        self.job_id = GLib.timeout_add(100, self.icon_view_refresh())
-        GLib.timeout_add(500,self.fill_emblems)
+        #self.job_id = GLib.timeout_add(100, self.icon_view_refresh())
+        self.icon_view_refresh()
+        #GLib.timeout_add(500,self.fill_emblems)
+        self.fill_emblems()
         self.icon_view_refresh()
 
     def on_set_emblem_clicked(self, widget):
@@ -181,7 +185,7 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
 
     def on_propertywindows_quit(self, widget):
         self.refresh()
-        GLib.source_remove(self.job_id)
+        #GLib.source_remove(self.job_id)
 
     def get_actual_emblems(self):
 #        info = ["gvfs-info", self.path, "-a", "metadata::emblems"]
