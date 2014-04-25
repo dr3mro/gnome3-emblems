@@ -1,3 +1,4 @@
+from __future__ import division
 import subprocess
 import urllib
 #import thread
@@ -34,6 +35,7 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
     def create_property_page(self):
         property_label = Gtk.Label('Emblems')
         property_label.show()
+        self.Progress = Gtk.ProgressBar()
         self.list_store = Gtk.ListStore(GdkPixbuf.Pixbuf, str, str)
         self.icon_view = Gtk.IconView()
         self.icon_view.set_model(self.list_store)
@@ -62,13 +64,14 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
             self.setIconButton
         ):
             buttonbox.pack_start(button, False, False, 0)
+        self.vbox.pack_start(self.Progress, False, False, 0)
         self.vbox.pack_start(scroll, True, True, 0)
         self.vbox.pack_start(buttonbox, False, True, 0)
         self.vbox.show_all()
-        #GLib.timeout_add(500, self.fill_emblems)
-        #self.job_id = GLib.timeout_add(100, self.icon_view_refresh())
-        self.icon_view_refresh()
-        self.fill_emblems()
+        GLib.timeout_add(500, self.fill_emblems)
+#        self.fill_emblems()
+        self.job_id = GLib.timeout_add(100, self.icon_view_refresh)
+#        self.icon_view_refresh()
         return Nautilus.PropertyPage(name="NautilusPython::emblems",
                                      label=property_label,
                                      page=self.vbox),
@@ -84,7 +87,7 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
         self.icon_view.set_model(None)
         self.icon_view.set_model(self.list_store)
         if self.icons_has_been_loaded:
-            #GLib.source_remove(self.job_id)
+            GLib.source_remove(self.job_id)
             return False
         else:
             return True
@@ -101,11 +104,10 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
     def on_refresh_button_clicked(self, widget):
         self.list_store.clear()
         self.icons_has_been_loaded = False
-        #self.job_id = GLib.timeout_add(100, self.icon_view_refresh())
-        self.icon_view_refresh()
-        #GLib.timeout_add(500,self.fill_emblems)
-        self.fill_emblems()
-        self.icon_view_refresh()
+        GLib.timeout_add(500,self.fill_emblems)
+#        self.fill_emblems()
+        self.job_id = GLib.timeout_add(100, self.icon_view_refresh)
+#        self.icon_view_refresh()
 
     def on_set_emblem_clicked(self, widget):
             self.emblem = ''.join(
@@ -185,7 +187,7 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
 
     def on_propertywindows_quit(self, widget):
         self.refresh()
-        #GLib.source_remove(self.job_id)
+        GLib.source_remove(self.job_id)
 
     def get_actual_emblems(self):
 #        info = ["gvfs-info", self.path, "-a", "metadata::emblems"]
@@ -217,14 +219,24 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
         #theme.set_custom_theme("Humanity")
         icons=theme.list_icons(None)
         self.icons_whitelist.sort()
+        self.Progress.show()
+        f=x=0
+        y=len(self.icons_whitelist)
+        self.Progress.set_fraction(f)
         for icon in self.icons_whitelist:
-                try:
-                    pixbuf = theme.load_icon(icon, 48, 0)
-                    self.list_store.append([pixbuf, icon, icon])
-                    with open("/tmp/valid_icons", 'a') as valid_icons:
-                        valid_icons.write('%s\n' % icon)
-                        valid_icons.close()
-                except GError:
-                    pass
+            x=x+1
+            f=x/y
+            self.Progress.set_fraction(f)
+            while Gtk.events_pending():
+                Gtk.main_iteration()
+            try:
+                pixbuf = theme.load_icon(icon, 48, 0)
+                self.list_store.append([pixbuf, icon, icon])
+                with open("/tmp/valid_icons", 'a') as valid_icons:
+                    valid_icons.write('%s\n' % icon)
+                    valid_icons.close()
+            except GError:
+                pass
         self.icons_has_been_loaded = True
+        self.Progress.hide()
         return False
