@@ -227,14 +227,13 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
             x=x+1
             f=x/y
             self.Progress.set_fraction(f)
-            while Gtk.events_pending():
-                Gtk.main_iteration()
             try:
                 pixbuf = theme.load_icon(icon, 48, 0)
                 self.list_store.append([pixbuf, icon, icon])
                 with open("/tmp/valid_icons", 'a') as valid_icons:
                     valid_icons.write('%s\n' % icon)
                     valid_icons.close()
+                    Gtk.main_iteration()
             except GError:
                 pass
         self.icons_has_been_loaded = True
