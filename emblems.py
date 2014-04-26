@@ -13,7 +13,27 @@ except ImportError:
 emblems = []
 debug = 1
 __version__ = 0.6
-
+progress_jump=['0.00',
+               '0.05',
+               '0.10',
+               '0.15',
+               '0.20',
+               '0.25',
+               '0.30',
+               '0.35',
+               '0.40',
+               '0.45',
+               '0.50',
+               '0.55',
+               '0.60',
+               '0.65',
+               '0.70',
+               '0.75',
+               '0.80',
+               '0.85',
+               '0.90',
+               '0.95',
+               '0.99']
 
 class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
     def __init__(self):
@@ -233,7 +253,8 @@ class Emblems(GObject.GObject, Nautilus.PropertyPageProvider):
                 with open("/tmp/valid_icons", 'a') as valid_icons:
                     valid_icons.write('%s\n' % icon)
                     valid_icons.close()
-                    Gtk.main_iteration()
+                    if "{:.2f}".format(f) in progress_jump:
+                        Gtk.main_iteration()
             except GError:
                 pass
         self.icons_has_been_loaded = True
